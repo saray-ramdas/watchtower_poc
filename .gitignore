@@ -1,2 +1,6 @@
 ./venv
 venv/
+.env
+.env.example
+configs/env/.env
+configs/env/.env.example
