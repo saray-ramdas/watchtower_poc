@@ -13,6 +13,8 @@ from .schemas import (
     ResponseAgentResponse,
     SavingsAgentRequest,
     SavingsAgentResponse,
+    SecurityCheckRequest,
+    SecurityCheckResponse,
 )
 from ..agents.master_agent import run_master_agent
 from ..agents.prize_money_agent import run_prize_money_agent
@@ -28,8 +30,13 @@ router = APIRouter(prefix="/api/v1", tags=["eligibility"])
 
 def _run_final_agent_flow(user_id: str, query: str, db: Session) -> EligibilityState:
     state = build_initial_state(user_id, query)
+    state = run_master_agent(state)
+
     try:
-        state = run_workflow(state, db)
+        if state.get("guardrail_status") == "blocked":
+            return run_response_agent(state)
+
+        state = run_savings_agent(state, db)
     except SQLAlchemyError as exc:
         raise HTTPException(
             status_code=503,
@@ -54,6 +61,42 @@ def _to_final_response(state: EligibilityState) -> FinalAgentResponse:
     )
 
 
+def _split_security_response(security_response: str) -> tuple[str, str]:
+    lines = [line.strip() for line in security_response.splitlines() if line.strip()]
+    output = lines[0].lower() if lines else "no"
+    reason = lines[1] if len(lines) > 1 else ""
+
+    for prefix in ("Reason:", "Warning:"):
+        if reason.lower().startswith(prefix.lower()):
+            reason = reason[len(prefix) :].strip()
+            break
+
+    return output, reason
+
+
+def _run_security_check_response(payload: SecurityCheckRequest) -> SecurityCheckResponse:
+    state = build_initial_state(payload.user_id, payload.query)
+
+    try:
+        result = run_master_agent(state)
+    except LLMGenerationError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"LLM security response generation failed: {exc}",
+        ) from exc
+
+    output, reason = _split_security_response(result["security_response"])
+    return SecurityCheckResponse(
+        output=output,
+        reason=reason,
+        flag=(
+            "warning"
+            if result.get("security_risk_type") == "malicious"
+            else "no warning"
+        ),
+    )
+
+
 @router.post("/eligibility", response_model=EligibilityResponse)
 def check_eligibility(
     payload: EligibilityRequest,
@@ -70,14 +113,28 @@ def test_savings_agent(
     db: Session = Depends(get_db),
 ) -> SavingsAgentResponse:
     state = build_initial_state(payload.user_id, payload.query)
-    state = run_master_agent(state)
 
     try:
+        state = run_master_agent(state)
+        if state.get("guardrail_status") == "blocked":
+            return SavingsAgentResponse(
+                user_id=state["user_id"],
+                original_query=state["original_query"],
+                normalized_intent=state["normalized_intent"],
+                balance=None,
+                years_in_bank=None,
+            )
+
         result = run_savings_agent(state, db)
     except SQLAlchemyError as exc:
         raise HTTPException(
             status_code=503,
             detail=f"Database unavailable: {exc.__class__.__name__}",
+        ) from exc
+    except LLMGenerationError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"LLM response generation failed: {exc}",
         ) from exc
 
     return SavingsAgentResponse(
@@ -150,3 +207,10 @@ def test_final_agent(
 ) -> FinalAgentResponse:
     state = _run_final_agent_flow(payload.user_id, payload.query, db)
     return _to_final_response(state)
+
+
+@router.post("/security-check", response_model=SecurityCheckResponse)
+def check_security(
+    payload: SecurityCheckRequest,
+) -> SecurityCheckResponse:
+    return _run_security_check_response(payload)

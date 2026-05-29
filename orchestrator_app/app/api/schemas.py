@@ -69,3 +69,18 @@ class FinalAgentResponse(BaseModel):
     user_id: str
     input_query: str
     response: str
+
+
+class SecurityCheckRequest(BaseModel):
+    query: str = Field(..., min_length=1, description="User query text")
+    user_id: str = Field(
+        "user1",
+        min_length=1,
+        description="Authenticated user id for testing the security gate",
+    )
+
+
+class SecurityCheckResponse(BaseModel):
+    output: str
+    reason: str
+    flag: str
