@@ -20,6 +20,7 @@ from ..agents.response_agent import run_response_agent
 from ..clients.llm_client import LLMGenerationError
 from ..agents.savings_agent import run_savings_agent
 from ..db.session import get_db
+from ..graph.workflow import run_workflow
 from ..graph.state import EligibilityState, build_initial_state
 
 router = APIRouter(prefix="/api/v1", tags=["eligibility"])
@@ -27,13 +28,8 @@ router = APIRouter(prefix="/api/v1", tags=["eligibility"])
 
 def _run_final_agent_flow(user_id: str, query: str, db: Session) -> EligibilityState:
     state = build_initial_state(user_id, query)
-    state = run_master_agent(state)
-
     try:
-        if state.get("guardrail_status") == "blocked":
-            return run_response_agent(state)
-
-        state = run_savings_agent(state, db)
+        state = run_workflow(state, db)
     except SQLAlchemyError as exc:
         raise HTTPException(
             status_code=503,
@@ -47,19 +43,7 @@ def _run_final_agent_flow(user_id: str, query: str, db: Session) -> EligibilityS
 
     if state.get("decision_reason") == "user_not_found":
         raise HTTPException(status_code=404, detail="User not found")
-
-    try:
-        if state.get("normalized_intent") == "lottery_eligibility":
-            state = run_prize_money_agent(state)
-        else:
-            state["decision_reason"] = "savings_data_answered_requested_intent"
-
-        return run_response_agent(state)
-    except LLMGenerationError as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=f"LLM response generation failed: {exc}",
-        ) from exc
+    return state
 
 
 def _to_final_response(state: EligibilityState) -> FinalAgentResponse:
