@@ -12,9 +12,18 @@ Context:
 - User ID: {{ user_id }}
 - User query: {{ original_query }}
 - Intent: {{ normalized_intent }}
+{% if normalized_intent == "bank_balance" %}
+- Savings balance: {{ balance }}
+{% elif normalized_intent == "bank_tenure" %}
+- Years in bank: {{ years_in_bank }}
+{% elif normalized_intent == "lottery_eligibility" %}
 - Savings balance: {{ balance }}
 - Years in bank: {{ years_in_bank }}
 - Eligibility: {{ eligible }}
 - Agent decision reason: {{ decision_reason }}
+{% else %}
+- Guardrail status: {{ guardrail_status }}
+- Reason: {{ decision_reason }}
+{% endif %}
 
 Return a concise, well-formatted customer response with a direct answer, details used, and reasoning.
