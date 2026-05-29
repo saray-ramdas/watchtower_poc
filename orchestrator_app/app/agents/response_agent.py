@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from ..clients.llm_client import LLMGenerationError, generate_llm_response, is_llm_configured
+from ..clients.llm_client import LLMGenerationError, generate_llm_response
 from ..graph.state import EligibilityState
 
 try:
@@ -153,30 +153,23 @@ def run_response_agent(state: EligibilityState) -> EligibilityState:
     generated = generate_llm_response(prompt)
 
     if generated is None:
-        state["final_response"] = _fallback_response(state)
-        state["response_source"] = "fallback"
-        return state
+        raise LLMGenerationError("Groq is required for final responses")
 
     if _passes_output_guardrails(state, generated):
         state["final_response"] = generated
         state["response_source"] = "llm"
         return state
 
-    if is_llm_configured():
-        retry_prompt = (
-            f"{prompt}\n\n"
-            "The previous draft violated the output guardrails. Regenerate the response. "
-            f"Only answer the {state.get('normalized_intent')} intent. "
-            "Do not include any unrelated fields or policy areas."
-        )
-        regenerated = generate_llm_response(retry_prompt)
-        if regenerated and _passes_output_guardrails(state, regenerated):
-            state["final_response"] = regenerated
-            state["response_source"] = "llm"
-            return state
+    retry_prompt = (
+        f"{prompt}\n\n"
+        "The previous draft violated the output guardrails. Regenerate the response. "
+        f"Only answer the {state.get('normalized_intent')} intent. "
+        "Do not include any unrelated fields or policy areas."
+    )
+    regenerated = generate_llm_response(retry_prompt)
+    if regenerated and _passes_output_guardrails(state, regenerated):
+        state["final_response"] = regenerated
+        state["response_source"] = "llm"
+        return state
 
-        raise LLMGenerationError("LLM response failed output guardrails")
-
-    state["final_response"] = _fallback_response(state)
-    state["response_source"] = "fallback"
-    return state
+    raise LLMGenerationError("LLM response failed output guardrails")
