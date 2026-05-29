@@ -60,6 +60,28 @@ THIRD_PERSON_TERMS = (
 )
 
 USER_ID_PATTERN = re.compile(r"\buser[\w-]*\b", re.IGNORECASE)
+PRIVATE_SUBJECT_AFTER_PATTERN = re.compile(
+    r"\b(?:bank\s+)?(?:account\s+)?(?:balance|savings|tenure|eligibility|lottery|prize)"
+    r"\s+(?:of|for|about)\s+([a-z][\w-]*)\b",
+    re.IGNORECASE,
+)
+PRIVATE_SUBJECT_BEFORE_PATTERN = re.compile(
+    r"\b([a-z][\w-]*)'?s\s+(?:bank\s+)?(?:account\s+)?"
+    r"(?:balance|savings|tenure|eligibility|lottery|prize)\b",
+    re.IGNORECASE,
+)
+PRIVATE_SUBJECT_DIRECT_PATTERN = re.compile(
+    r"\b(?:of|for|about)\s+([a-z][\w-]*)\s+(?:bank\s+)?(?:account\s+)?"
+    r"(?:balance|savings|tenure|eligibility|lottery|prize)\b",
+    re.IGNORECASE,
+)
+SELF_REFERENCES = {
+    "i",
+    "me",
+    "my",
+    "mine",
+    "myself",
+}
 
 
 def contains_any(text: str, terms: tuple[str, ...]) -> bool:
@@ -72,6 +94,17 @@ def normalize_query(query: str) -> str:
 
 def extract_mentioned_user_ids(query: str) -> list[str]:
     return sorted({match.group(0).lower() for match in USER_ID_PATTERN.finditer(query)})
+
+
+def extract_private_subject_refs(query: str) -> list[str]:
+    refs = set()
+    for pattern in (
+        PRIVATE_SUBJECT_AFTER_PATTERN,
+        PRIVATE_SUBJECT_BEFORE_PATTERN,
+        PRIVATE_SUBJECT_DIRECT_PATTERN,
+    ):
+        refs.update(match.group(1).lower() for match in pattern.finditer(query))
+    return sorted(refs)
 
 
 def classify_intent(normalized_query: str) -> str:
@@ -94,9 +127,18 @@ def classify_scope(
     mentioned_user_ids: list[str],
 ) -> str:
     normalized_user_id = authenticated_user_id.lower().strip()
+    private_subject_refs = extract_private_subject_refs(normalized_query)
 
     if contains_any(normalized_query, BULK_DATA_TERMS):
         return "all_users"
+
+    if private_subject_refs:
+        if all(
+            ref in SELF_REFERENCES or ref == normalized_user_id
+            for ref in private_subject_refs
+        ):
+            return "self"
+        return "other_user"
 
     if mentioned_user_ids:
         if all(user_id == normalized_user_id for user_id in mentioned_user_ids):
