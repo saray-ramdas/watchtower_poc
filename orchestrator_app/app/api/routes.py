@@ -17,6 +17,7 @@ from .schemas import (
 from ..agents.master_agent import run_master_agent
 from ..agents.prize_money_agent import run_prize_money_agent
 from ..agents.response_agent import run_response_agent
+from ..clients.llm_client import LLMGenerationError
 from ..agents.savings_agent import run_savings_agent
 from ..db.session import get_db
 from ..graph.state import EligibilityState, build_initial_state
@@ -28,26 +29,37 @@ def _run_final_agent_flow(user_id: str, query: str, db: Session) -> EligibilityS
     state = build_initial_state(user_id, query)
     state = run_master_agent(state)
 
-    if state.get("guardrail_status") == "blocked":
-        return run_response_agent(state)
-
     try:
+        if state.get("guardrail_status") == "blocked":
+            return run_response_agent(state)
+
         state = run_savings_agent(state, db)
     except SQLAlchemyError as exc:
         raise HTTPException(
             status_code=503,
             detail=f"Database unavailable: {exc.__class__.__name__}",
         ) from exc
+    except LLMGenerationError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"LLM response generation failed: {exc}",
+        ) from exc
 
     if state.get("decision_reason") == "user_not_found":
         raise HTTPException(status_code=404, detail="User not found")
 
-    if state.get("normalized_intent") == "lottery_eligibility":
-        state = run_prize_money_agent(state)
-    else:
-        state["decision_reason"] = "savings_data_answered_requested_intent"
+    try:
+        if state.get("normalized_intent") == "lottery_eligibility":
+            state = run_prize_money_agent(state)
+        else:
+            state["decision_reason"] = "savings_data_answered_requested_intent"
 
-    return run_response_agent(state)
+        return run_response_agent(state)
+    except LLMGenerationError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"LLM response generation failed: {exc}",
+        ) from exc
 
 
 def _to_final_response(state: EligibilityState) -> FinalAgentResponse:

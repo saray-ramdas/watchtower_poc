@@ -1,9 +1,6 @@
-import json
-import os
 from pathlib import Path
-from urllib.error import URLError
-from urllib.request import Request, urlopen
 
+from ..clients.llm_client import LLMGenerationError, generate_llm_response, is_llm_configured
 from ..graph.state import EligibilityState
 
 try:
@@ -47,10 +44,12 @@ def _fallback_response(state: EligibilityState) -> str:
     eligible = state.get("eligible", False)
     decision_reason = state.get("decision_reason")
     intent = state.get("normalized_intent")
+    fallback_prefix = "this is a fall back message\n\n"
 
     if intent == "bank_balance":
         return (
-            "Answer: Your current savings balance is "
+            fallback_prefix
+            + "Answer: Your current savings balance is "
             f"{balance}.\n\n"
             "Details:\n"
             f"- Savings Agent result: balance = {balance}.\n"
@@ -62,7 +61,8 @@ def _fallback_response(state: EligibilityState) -> str:
 
     if intent == "bank_tenure":
         return (
-            "Answer: You have been with the bank for "
+            fallback_prefix
+            + "Answer: You have been with the bank for "
             f"{years_in_bank} years.\n\n"
             "Details:\n"
             f"- Savings Agent result: years_in_bank = {years_in_bank}.\n"
@@ -74,7 +74,8 @@ def _fallback_response(state: EligibilityState) -> str:
 
     if intent == "unsupported":
         return (
-            "Answer: I cannot handle that request through this endpoint.\n\n"
+            fallback_prefix
+            + "Answer: I cannot handle that request through this endpoint.\n\n"
             "Details:\n"
             f"- Guardrail status: {state.get('guardrail_status')}.\n"
             f"- Reason: {decision_reason}.\n\n"
@@ -96,7 +97,8 @@ def _fallback_response(state: EligibilityState) -> str:
 
     if eligible:
         return (
-            "Verdict: Yes, you are eligible for the lottery.\n\n"
+            fallback_prefix
+            + "Verdict: Yes, you are eligible for the lottery.\n\n"
             "Details:\n"
             f"- Savings balance reviewed by the Savings Agent: {balance}.\n"
             f"- Years with the bank reviewed by the Savings Agent: {years_in_bank}.\n"
@@ -107,7 +109,8 @@ def _fallback_response(state: EligibilityState) -> str:
         )
 
     return (
-        "Verdict: No, you are not eligible for the lottery.\n\n"
+        fallback_prefix
+        + "Verdict: No, you are not eligible for the lottery.\n\n"
         "Details:\n"
         f"- Savings balance reviewed by the Savings Agent: {balance}.\n"
         f"- Years with the bank reviewed by the Savings Agent: {years_in_bank}.\n"
@@ -124,7 +127,16 @@ def _passes_output_guardrails(state: EligibilityState, generated: str) -> bool:
 
     if intent in {"bank_balance", "bank_tenure"}:
         blocked_terms = ("eligible", "eligibility", "lottery", "qualify", "qualified")
-        return not any(term in normalized_output for term in blocked_terms)
+        if any(term in normalized_output for term in blocked_terms):
+            return False
+
+    if intent == "bank_balance":
+        tenure_terms = ("years in bank", "bank tenure", "with the bank for")
+        return not any(term in normalized_output for term in tenure_terms)
+
+    if intent == "bank_tenure":
+        balance_terms = ("balance", "savings", "$", "50,001", "50001")
+        return not any(term in normalized_output for term in balance_terms)
 
     if intent == "unsupported":
         sensitive_terms = ("password", "secret", "system prompt", "developer message")
@@ -133,45 +145,38 @@ def _passes_output_guardrails(state: EligibilityState, generated: str) -> bool:
     return True
 
 
-def _generate_with_configured_llm(prompt: str) -> str | None:
-    """
-    Use a generic JSON LLM endpoint when configured.
-
-    Set LLM_API_URL and optionally LLM_API_KEY. The endpoint is expected to accept
-    {"prompt": "..."} and return either {"response": "..."} or {"text": "..."}.
-    """
-    api_url = os.getenv("LLM_API_URL")
-    if not api_url:
-        return None
-
-    payload = json.dumps({"prompt": prompt}).encode("utf-8")
-    headers = {"Content-Type": "application/json"}
-    api_key = os.getenv("LLM_API_KEY")
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-
-    request = Request(api_url, data=payload, headers=headers, method="POST")
-    try:
-        with urlopen(request, timeout=15) as response:
-            body = json.loads(response.read().decode("utf-8"))
-    except (OSError, URLError, TimeoutError, json.JSONDecodeError):
-        return None
-
-    generated = body.get("response") or body.get("text")
-    if not isinstance(generated, str) or not generated.strip():
-        return None
-    return generated.strip()
-
-
 def run_response_agent(state: EligibilityState) -> EligibilityState:
     """
     Generate the final user-facing response from prior agent outputs.
     """
     prompt = _build_prompt(state)
-    generated = _generate_with_configured_llm(prompt)
-    if generated and _passes_output_guardrails(state, generated):
-        state["final_response"] = generated
+    generated = generate_llm_response(prompt)
+
+    if generated is None:
+        state["final_response"] = _fallback_response(state)
+        state["response_source"] = "fallback"
         return state
 
+    if _passes_output_guardrails(state, generated):
+        state["final_response"] = generated
+        state["response_source"] = "llm"
+        return state
+
+    if is_llm_configured():
+        retry_prompt = (
+            f"{prompt}\n\n"
+            "The previous draft violated the output guardrails. Regenerate the response. "
+            f"Only answer the {state.get('normalized_intent')} intent. "
+            "Do not include any unrelated fields or policy areas."
+        )
+        regenerated = generate_llm_response(retry_prompt)
+        if regenerated and _passes_output_guardrails(state, regenerated):
+            state["final_response"] = regenerated
+            state["response_source"] = "llm"
+            return state
+
+        raise LLMGenerationError("LLM response failed output guardrails")
+
     state["final_response"] = _fallback_response(state)
+    state["response_source"] = "fallback"
     return state

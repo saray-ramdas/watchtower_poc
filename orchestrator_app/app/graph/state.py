@@ -11,6 +11,7 @@ class EligibilityState(TypedDict, total=False):
     eligible: bool
     decision_reason: str
     final_response: str
+    response_source: str
 
 
 def build_initial_state(user_id: str, original_query: str) -> EligibilityState:
