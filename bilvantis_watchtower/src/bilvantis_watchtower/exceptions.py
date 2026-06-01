@@ -4,3 +4,7 @@ class WatchtowerError(RuntimeError):
 
 class SecurityResponseError(WatchtowerError):
     pass
+
+
+class PIIDetectionError(WatchtowerError):
+    pass

@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bilvantis-watchtower"
+version = "0.1.0"
+description = "Security and PII guardrail SDK for Bilvantis agent applications."
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]

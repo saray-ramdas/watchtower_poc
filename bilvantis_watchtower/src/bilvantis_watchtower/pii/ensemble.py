@@ -1,11 +1,8 @@
 import json
 import re
 
+from bilvantis_watchtower.exceptions import PIIDetectionError
 from bilvantis_watchtower.types import PIIDetectedEntity, SecurityLLMGenerator
-
-
-class PIIDetectionError(RuntimeError):
-    pass
 
 
 def build_pii_detection_prompt(query: str) -> str:

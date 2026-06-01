@@ -1,5 +1,6 @@
+from bilvantis_watchtower.pipeline import run_security_and_pii
 from bilvantis_watchtower.security.enforcement import run_security_gate
-from bilvantis_watchtower.types import SecurityLLMGenerator, SecurityState
+from bilvantis_watchtower.types import SecurityLLMGenerator, SecurityPIIState, SecurityState
 
 
 class Watchtower:
@@ -8,4 +9,7 @@ class Watchtower:
 
     def run_security_gate(self, state: SecurityState) -> SecurityState:
         return run_security_gate(state, self._llm_generator)
+
+    def run_security_and_pii(self, state: SecurityPIIState) -> SecurityPIIState:
+        return run_security_and_pii(state, self._llm_generator)
 
