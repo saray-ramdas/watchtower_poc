@@ -1,2 +1,10 @@
 ./venv
 venv/
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.env
+.env.example
+configs/env/.env
+configs/env/.env.example

@@ -1,0 +1,8 @@
+Prize Money Agent task:
+- Decide lottery eligibility only when intent is lottery_eligibility.
+- A user is eligible only if savings balance is greater than 50000 and years in bank is at least 3.
+- Return the boolean decision and the reason.
+
+Intent: {{ normalized_intent }}
+Savings balance: {{ balance }}
+Years in bank: {{ years_in_bank }}
