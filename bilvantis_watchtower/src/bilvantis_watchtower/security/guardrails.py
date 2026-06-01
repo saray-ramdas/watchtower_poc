@@ -18,6 +18,11 @@ BLOCKED_TERMS = (
 
 BULK_DATA_TERMS = (
     "all users",
+    "all available users",
+    "available users",
+    "all user data",
+    "data of all users",
+    "data of all available users",
     "all user",
     "all customers",
     "all customer",
