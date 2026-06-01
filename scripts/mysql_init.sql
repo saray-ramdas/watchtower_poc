@@ -10,6 +10,14 @@ CREATE TABLE IF NOT EXISTS customer_lottery_profile (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS pii_token_vault (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    token VARCHAR(64) NOT NULL UNIQUE,
+    pii_type VARCHAR(64) NOT NULL,
+    pii_value TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 INSERT INTO customer_lottery_profile (user_id, full_name, balance, years_in_bank)
 VALUES
     ('u1001', 'Alice Johnson', 76000.00, 4),

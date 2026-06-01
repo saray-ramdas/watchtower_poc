@@ -84,3 +84,70 @@ class SecurityCheckResponse(BaseModel):
     output: str
     reason: str
     flag: str
+
+
+class PIIMaskRequest(BaseModel):
+    query: str = Field(..., min_length=1, description="User query text to redact")
+
+
+class PIIMaskedItem(BaseModel):
+    token: str
+    pii_type: str
+
+
+class PIIMaskResponse(BaseModel):
+    input_query: str
+    masked_query: str
+    masked_items: list[PIIMaskedItem]
+
+
+class FinalSecurityPIIRequest(BaseModel):
+    user_id: str = Field(..., min_length=1, description="Authenticated user id")
+    query: str = Field(..., min_length=1, description="User query text")
+
+
+class FinalSecurityPIIResponse(BaseModel):
+    user_id: str
+    input_query: str
+    security_output: str
+    security_reason: str
+    security_flag: str
+    masked_query: str
+    masked_items: list[PIIMaskedItem]
+
+
+class PIISavingsEligibilityRequest(BaseModel):
+    user_id: str = Field(..., min_length=1, description="Authenticated user id")
+    masked_query: str = Field(..., min_length=1, description="Tokenized query text")
+
+
+class PIISavingsEligibilityResponse(BaseModel):
+    remasked_query: str
+    unmasked_query: str
+    balance: float | None = None
+    years_in_bank: int | None = None
+    eligible: bool | None = None
+    actual_query_output: str
+    user_query_output: str
+
+
+class FinalOfFinalRequest(BaseModel):
+    user_id: str = Field(..., min_length=1, description="Authenticated user id")
+    query: str = Field(..., min_length=1, description="User query text")
+
+
+class FinalOfFinalResponse(BaseModel):
+    user_id: str
+    input_query: str
+    security_output: str
+    security_reason: str
+    security_flag: str
+    masked_query: str
+    masked_items: list[PIIMaskedItem]
+    remasked_query: str
+    unmasked_query: str
+    balance: float | None = None
+    years_in_bank: int | None = None
+    eligible: bool | None = None
+    actual_query_output: str
+    user_query_output: str

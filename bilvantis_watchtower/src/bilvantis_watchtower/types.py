@@ -16,3 +16,13 @@ class SecurityState(TypedDict, total=False):
 
 
 SecurityLLMGenerator = Callable[[str], str | None]
+
+
+class PIIDetectedEntity(TypedDict):
+    value: str
+    pii_type: str
+
+
+class SecurityPIIState(SecurityState, total=False):
+    masked_query: str
+    pii_entities: list[PIIDetectedEntity]

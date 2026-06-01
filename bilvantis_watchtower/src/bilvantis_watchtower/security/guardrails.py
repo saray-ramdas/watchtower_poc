@@ -82,6 +82,23 @@ SELF_REFERENCES = {
     "mine",
     "myself",
 }
+NON_SUBJECT_TOKENS = {
+    "a",
+    "an",
+    "the",
+    "any",
+    "all",
+    "this",
+    "that",
+    "these",
+    "those",
+    "lottery",
+    "prize",
+    "balance",
+    "savings",
+    "tenure",
+    "eligibility",
+}
 
 
 def contains_any(text: str, terms: tuple[str, ...]) -> bool:
@@ -104,7 +121,9 @@ def extract_private_subject_refs(query: str) -> list[str]:
         PRIVATE_SUBJECT_DIRECT_PATTERN,
     ):
         refs.update(match.group(1).lower() for match in pattern.finditer(query))
-    return sorted(refs)
+    return sorted(
+        ref for ref in refs if ref not in SELF_REFERENCES and ref not in NON_SUBJECT_TOKENS
+    )
 
 
 def classify_intent(normalized_query: str) -> str:

@@ -10,6 +10,9 @@ except ImportError:
 
 
 _PROMPT_PATH = Path(__file__).resolve().parents[1] / "prompts" / "response_prompt.j2"
+_USER_ID_TOKEN = "<USER_ID_MASKED>"
+_BALANCE_TOKEN = "<BALANCE_MASKED>"
+_YEARS_TOKEN = "<YEARS_IN_BANK_MASKED>"
 
 
 def _render_template(template_path: Path, context: EligibilityState) -> str | None:
@@ -36,6 +39,35 @@ def _build_prompt(state: EligibilityState) -> str:
         "Answer only the requested intent. Do not mention lottery eligibility for balance "
         "or tenure questions."
     )
+
+
+def _build_masked_prompt_state(state: EligibilityState) -> tuple[EligibilityState, dict[str, str]]:
+    masked_state = dict(state)
+    replacements: dict[str, str] = {}
+
+    user_id = state.get("user_id")
+    if user_id is not None:
+        masked_state["user_id"] = _USER_ID_TOKEN
+        replacements[_USER_ID_TOKEN] = str(user_id)
+
+    balance = state.get("balance")
+    if balance is not None:
+        masked_state["balance"] = _BALANCE_TOKEN
+        replacements[_BALANCE_TOKEN] = str(balance)
+
+    years_in_bank = state.get("years_in_bank")
+    if years_in_bank is not None:
+        masked_state["years_in_bank"] = _YEARS_TOKEN
+        replacements[_YEARS_TOKEN] = str(years_in_bank)
+
+    return masked_state, replacements
+
+
+def _unmask_generated_response(generated: str, replacements: dict[str, str]) -> str:
+    restored = generated
+    for token, value in replacements.items():
+        restored = restored.replace(token, value)
+    return restored
 
 
 def _fallback_response(state: EligibilityState) -> str:
@@ -149,14 +181,22 @@ def run_response_agent(state: EligibilityState) -> EligibilityState:
     """
     Generate the final user-facing response from prior agent outputs.
     """
-    prompt = _build_prompt(state)
+    masked_state, replacements = _build_masked_prompt_state(state)
+    prompt = _build_prompt(masked_state)
     generated = generate_llm_response(prompt)
 
     if generated is None:
-        raise LLMGenerationError("Groq is required for final responses")
+        state["final_response"] = _fallback_response(state)
+        state["response_source"] = "fallback"
+        return state
 
+    keep_masked_output = bool(state.get("keep_masked_output"))
     if _passes_output_guardrails(state, generated):
-        state["final_response"] = generated
+        state["final_response"] = (
+            generated
+            if keep_masked_output
+            else _unmask_generated_response(generated, replacements)
+        )
         state["response_source"] = "llm"
         return state
 
@@ -164,12 +204,19 @@ def run_response_agent(state: EligibilityState) -> EligibilityState:
         f"{prompt}\n\n"
         "The previous draft violated the output guardrails. Regenerate the response. "
         f"Only answer the {state.get('normalized_intent')} intent. "
+        "Use only masked placeholders for sensitive data fields. "
         "Do not include any unrelated fields or policy areas."
     )
     regenerated = generate_llm_response(retry_prompt)
     if regenerated and _passes_output_guardrails(state, regenerated):
-        state["final_response"] = regenerated
+        state["final_response"] = (
+            regenerated
+            if keep_masked_output
+            else _unmask_generated_response(regenerated, replacements)
+        )
         state["response_source"] = "llm"
         return state
 
-    raise LLMGenerationError("LLM response failed output guardrails")
+    state["final_response"] = _fallback_response(state)
+    state["response_source"] = "fallback"
+    return state

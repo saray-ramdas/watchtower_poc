@@ -47,3 +47,17 @@ def test_self_balance_request_is_allowed() -> None:
     assert result["security_decision"] == "yes"
     assert result["security_reason"] == "self_query_allowed"
     assert result["requested_scope"] == "self"
+
+
+def test_self_lottery_request_with_article_is_allowed() -> None:
+    result = run_security_gate(
+        {
+            "user_id": "1",
+            "original_query": "am i eligible for the lottery?",
+        },
+        _security_response,
+    )
+
+    assert result["security_decision"] == "yes"
+    assert result["security_reason"] == "self_query_allowed"
+    assert result["requested_scope"] == "self"
